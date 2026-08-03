@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         ideas = research.find_ideas(profile, seen)
     except research.ResearchError as exc:
-        notify(f"🕵️ <b>Inspector Gadget stumbled</b>\n\n{exc}")
+        notify(f"🕵️ <b>Inspector Gadget stumbled</b>\n\n{telegram.escape_html(str(exc))}")
         return 1
 
     if not notify(telegram.format_digest(ideas)):

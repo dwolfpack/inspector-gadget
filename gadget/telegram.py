@@ -34,6 +34,16 @@ def _redact(text: str, token: str) -> str:
     return text.replace(token, "***") if token else text
 
 
+def escape_html(value: str) -> str:
+    """Escape text for safe interpolation into a Telegram HTML message.
+
+    Public wrapper around the internal escaping helper so callers outside
+    this module (e.g. run.py's failure-report path) don't need to import
+    `html` themselves and risk missing an escape.
+    """
+    return _esc(value)
+
+
 def _esc(value: str) -> str:
     return html.escape(str(value), quote=False)
 

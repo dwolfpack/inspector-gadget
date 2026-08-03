@@ -67,9 +67,9 @@ def load_recent(
             try:
                 record = json.loads(line)
                 sent_at = datetime.fromisoformat(record["sent_at"])
+                if sent_at >= cutoff:
+                    recent.append(record)
             except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                 continue
-            if sent_at >= cutoff:
-                recent.append(record)
 
     return recent

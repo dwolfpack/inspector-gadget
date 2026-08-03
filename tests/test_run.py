@@ -61,6 +61,23 @@ def test_research_failure_sends_a_stumble_message_and_exits_nonzero():
     append.assert_not_called()
 
 
+def test_research_failure_message_escapes_html_in_the_exception():
+    with patch("gadget.run.history.load_recent", return_value=[]), \
+         patch(
+             "gadget.run.research.find_ideas",
+             side_effect=research.ResearchError("boom <script>alert(1)</script>"),
+         ), \
+         patch("gadget.run.telegram.send") as send, \
+         patch("gadget.run.history.append") as append:
+        code = run.main([])
+
+    assert code == 1
+    sent_text = send.call_args.args[0]
+    assert "&lt;script&gt;" in sent_text
+    assert "<script>" not in sent_text
+    append.assert_not_called()
+
+
 def test_no_ideas_sends_quiet_note_and_exits_zero():
     with patch("gadget.run.history.load_recent", return_value=[]), \
          patch("gadget.run.research.find_ideas", return_value=[]), \

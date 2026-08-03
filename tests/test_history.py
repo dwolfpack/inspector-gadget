@@ -67,6 +67,19 @@ def test_load_recent_on_missing_directory_returns_empty(tmp_path):
     assert loaded == []
 
 
+def test_load_recent_skips_naive_timestamps_instead_of_raising(tmp_path):
+    now = datetime(2026, 8, 3, 5, 0, tzinfo=timezone.utc)
+    history.append([_idea("Good", "https://good.example")], history_dir=tmp_path, now=now)
+    naive_record = {**_idea("Naive", "https://naive.example"), "sent_at": "2026-08-01T05:00:00"}
+    with (tmp_path / "2026-08.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(naive_record) + "\n")
+
+    loaded = history.load_recent(days=30, history_dir=tmp_path, now=now)
+
+    assert len(loaded) == 1
+    assert loaded[0]["hook"] == "Good"
+
+
 def test_load_recent_skips_corrupt_lines(tmp_path):
     now = datetime(2026, 8, 3, 5, 0, tzinfo=timezone.utc)
     history.append([_idea("Good", "https://good.example")], history_dir=tmp_path, now=now)

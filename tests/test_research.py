@@ -155,6 +155,37 @@ def test_find_ideas_raises_after_exhausting_resumes():
     assert client.messages.create.call_count == research.MAX_RESUMES
 
 
+def test_find_ideas_raises_a_clear_error_on_max_tokens_stop():
+    client = _client(_response("partial output, no closing fence", stop_reason="max_tokens"))
+
+    with pytest.raises(research.ResearchError, match="token limit"):
+        research.find_ideas("profile", [], client=client)
+
+
+def test_find_ideas_drops_ideas_that_duplicate_a_seen_source_url():
+    seen = [{"hook": "Old thing", "source_url": "https://example.com/a"}]
+    dup = _idea("Duplicate")
+    dup["source_url"] = "https://EXAMPLE.COM/A/"
+    fresh = _idea("Fresh")
+    fresh["source_url"] = "https://example.com/b"
+    payload = json.dumps({"ideas": [dup, fresh]})
+    client = _client(_response(payload))
+
+    ideas = research.find_ideas("profile", seen, client=client)
+
+    assert [item["hook"] for item in ideas] == ["Fresh"]
+
+
+def test_find_ideas_raises_when_source_url_is_not_http():
+    broken = _idea()
+    broken["source_url"] = "javascript:alert(1)"
+    payload = json.dumps({"ideas": [broken]})
+    client = _client(_response(payload))
+
+    with pytest.raises(research.ResearchError, match="source_url"):
+        research.find_ideas("profile", [], client=client)
+
+
 def test_find_ideas_preserves_conversation_across_resume():
     payload = json.dumps({"ideas": [_idea()]})
     responses = [_response("searching...", stop_reason="pause_turn"), _response(payload)]
