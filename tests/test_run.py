@@ -101,3 +101,15 @@ def test_missing_env_var_exits_nonzero_without_calling_the_api(monkeypatch):
 
     assert code == 1
     find.assert_not_called()
+
+
+def test_dry_run_does_not_require_the_telegram_credentials(monkeypatch):
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
+    monkeypatch.delenv("TELEGRAM_CHAT_ID")
+    with patch("gadget.run.history.load_recent", return_value=[]), \
+         patch("gadget.run.research.find_ideas", return_value=[_idea()]), \
+         patch("gadget.run.telegram.send") as send:
+        code = run.main(["--dry-run"])
+
+    assert code == 0
+    send.assert_not_called()
