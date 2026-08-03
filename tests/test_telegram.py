@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
 from gadget import telegram
 
@@ -105,3 +106,55 @@ def test_send_error_message_never_contains_the_token():
                 telegram.send("hello", token="SECRET_TOKEN", chat_id="123")
 
     assert "SECRET_TOKEN" not in str(excinfo.value)
+
+
+def test_send_network_error_never_contains_the_token():
+    # requests' exception strings routinely embed the full request URL,
+    # including the bot token (e.g. "Max retries exceeded with url:
+    # /botSECRET_TOKEN/sendMessage"). That must never reach the raised error.
+    error = requests.ConnectionError(
+        "Max retries exceeded with url: /botSECRET_TOKEN/sendMessage"
+    )
+    with patch("gadget.telegram.requests.post", side_effect=error):
+        with patch("gadget.telegram.time.sleep"):
+            with pytest.raises(telegram.TelegramError) as excinfo:
+                telegram.send("hello", token="SECRET_TOKEN", chat_id="123")
+
+    assert "SECRET_TOKEN" not in str(excinfo.value)
+
+
+def test_format_handles_very_long_hook_without_exceeding_max_len():
+    text = telegram.format_digest([_idea(hook="x" * 5000)])
+
+    assert len(text) <= telegram.MAX_LEN
+
+
+def test_format_handles_very_long_prompt_without_exceeding_max_len():
+    idea = _idea()
+    idea["prompt_to_try"] = "x" * 5000
+
+    text = telegram.format_digest([idea])
+
+    assert len(text) <= telegram.MAX_LEN
+
+
+def test_format_never_ends_mid_tag():
+    # An uncapped source_url pushes the rendered item past MAX_LEN even at the
+    # tightest body cap; the old raw [:MAX_LEN] slice would land inside the
+    # <a href="..."> tag and cut it in half.
+    idea = _idea(url="https://example.com/" + "x" * 5000)
+
+    text = telegram.format_digest([idea])
+
+    assert text.count("<") == text.count(">")
+
+
+def test_format_escapes_quotes_in_source_url():
+    text = telegram.format_digest([_idea(url='https://example.com/"onmouseover=alert(1)')])
+
+    assert 'href="https://example.com/&quot;onmouseover=alert(1)"' in text
+    # No raw quote may appear inside the href attribute value (which would
+    # terminate the attribute early and break out into the surrounding HTML).
+    href_start = text.index('href="') + len('href="')
+    href_end = text.index('"', href_start)
+    assert '"' not in text[href_start:href_end]

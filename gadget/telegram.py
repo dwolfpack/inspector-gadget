@@ -18,13 +18,28 @@ EMPTY_MESSAGE = (
 # Progressively tighter body caps, tried in order until the message fits.
 _BODY_CAPS = (600, 400, 250, 150, 80)
 
+OVERFLOW_MESSAGE = (
+    HEADER + "<i>Today's ideas were too long to send. "
+    "Check the workflow logs for the raw digest.</i>"
+)
+
 
 class TelegramError(Exception):
     """Delivery to Telegram failed."""
 
 
+def _redact(text: str, token: str) -> str:
+    """Never let the bot token reach an exception string — these land in CI logs."""
+    return text.replace(token, "***") if token else text
+
+
 def _esc(value: str) -> str:
     return html.escape(str(value), quote=False)
+
+
+def _esc_attr(value: str) -> str:
+    """Escape a value for use inside a double-quoted HTML attribute."""
+    return html.escape(str(value), quote=True)
 
 
 def _clip(value: str, cap: int) -> str:
@@ -36,11 +51,11 @@ def _clip(value: str, cap: int) -> str:
 
 def _render_item(item: dict, cap: int) -> str:
     return (
-        f"<b>{_esc(item['hook'])}</b>\n"
+        f"<b>{_esc(_clip(item['hook'], 120))}</b>\n"
         f"{_esc(_clip(item['what_it_is'], cap))}\n"
         f"<i>{_esc(_clip(item['why_you'], cap))}</i>\n"
-        f"<a href=\"{_esc(item['source_url'])}\">source</a>\n"
-        f"<pre>{_esc(item['prompt_to_try'])}</pre>"
+        f"<a href=\"{_esc_attr(_clip(item['source_url'], 300))}\">source</a>\n"
+        f"<pre>{_esc(_clip(item['prompt_to_try'], cap * 2))}</pre>"
     )
 
 
@@ -57,17 +72,21 @@ def format_digest(items: list[dict]) -> str:
 
     Bodies are clipped progressively rather than the whole message being cut,
     so an over-long model response degrades into shorter summaries instead of a
-    truncated final item.
+    truncated final item. Every rendered field has its own cap, so even a
+    maximally-clipped item can never emit a partial tag or entity — if nothing
+    fits, a short static (and valid-HTML) overflow message is returned instead
+    of slicing raw characters off the rendered text.
     """
     if not items:
         return EMPTY_MESSAGE
 
-    for cap in _BODY_CAPS:
-        text = _render(items, cap)
-        if len(text) <= MAX_LEN:
-            return text
+    for count in range(len(items), 0, -1):
+        for cap in _BODY_CAPS:
+            text = _render(items[:count], cap)
+            if len(text) <= MAX_LEN:
+                return text
 
-    return _render(items, _BODY_CAPS[-1])[:MAX_LEN]
+    return OVERFLOW_MESSAGE
 
 
 def send(text: str, *, token: str, chat_id: str) -> None:
@@ -98,7 +117,8 @@ def send(text: str, *, token: str, chat_id: str) -> None:
             return
         last_status, last_body = response.status_code, response.text
 
+    safe_body = _redact(last_body, token)[:200]
     raise TelegramError(
         f"Telegram sendMessage failed after 2 attempts "
-        f"(status={last_status}): {last_body[:200]}"
+        f"(status={last_status}): {safe_body}"
     )
