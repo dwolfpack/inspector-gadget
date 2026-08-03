@@ -1,0 +1,62 @@
+name: daily digest
+
+on:
+  schedule:
+    # 05:00 UTC = 08:00 IDT (summer, UTC+3)
+    # 06:00 UTC = 08:00 IST (winter, UTC+2)
+    # The guard step below drops whichever run is not 08:00 in Israel, so the
+    # cron never needs editing when DST flips.
+    - cron: "0 5 * * *"
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip unless it is 08:00 in Israel
+        id: guard
+        run: |
+          hour="$(TZ=Asia/Jerusalem date +%H)"
+          echo "Israel hour is $hour"
+          if [ "$hour" != "08" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.run == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.guard.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Send the digest
+        if: steps.guard.outputs.run == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python -m gadget.run
+
+      - name: Commit the history entry
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          if [ -z "$(git status --porcelain history/)" ]; then
+            echo "No history change to commit."
+            exit 0
+          fi
+          git config user.name "inspector-gadget[bot]"
+          git config user.email "inspector-gadget@users.noreply.github.com"
+          git add history/
+          git commit -m "chore: record $(TZ=Asia/Jerusalem date +%Y-%m-%d) digest"
+          git push
