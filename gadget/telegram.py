@@ -11,6 +11,7 @@ MAX_LEN = 4096
 SEPARATOR = "\n\n————————\n\n"
 HEADER = "<b>🕵️ Inspector Gadget</b>\n\n"
 QUIET_NOTE = "\n\n<i>Quiet morning — that's everything worth flagging.</i>"
+TRIMMED_NOTE = "\n\n<i>Some ideas were trimmed to fit Telegram's size limit.</i>"
 EMPTY_MESSAGE = (
     HEADER + "<i>Quiet morning — nothing new worth flagging today.</i>"
 )
@@ -59,10 +60,12 @@ def _render_item(item: dict, cap: int) -> str:
     )
 
 
-def _render(items: list[dict], cap: int) -> str:
+def _render(items: list[dict], cap: int, *, dropped: bool = False) -> str:
     body = SEPARATOR.join(_render_item(item, cap) for item in items)
     text = HEADER + body
-    if len(items) < 3:
+    if dropped:
+        text += TRIMMED_NOTE
+    elif len(items) < 3:
         text += QUIET_NOTE
     return text
 
@@ -82,7 +85,7 @@ def format_digest(items: list[dict]) -> str:
 
     for count in range(len(items), 0, -1):
         for cap in _BODY_CAPS:
-            text = _render(items[:count], cap)
+            text = _render(items[:count], cap, dropped=(count < len(items)))
             if len(text) <= MAX_LEN:
                 return text
 

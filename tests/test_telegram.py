@@ -158,3 +158,24 @@ def test_format_escapes_quotes_in_source_url():
     href_start = text.index('href="') + len('href="')
     href_end = text.index('"', href_start)
     assert '"' not in text[href_start:href_end]
+
+
+def test_format_shows_trimmed_note_when_items_dropped_for_size():
+    # Create ideas with long content that forces size-based dropping.
+    # When not all items fit, the message should say so explicitly,
+    # not misleadingly claim it's a "quiet morning with everything worth flagging".
+    long_body = "x" * 5000
+    # Many items with long content should trigger dropping due to size limits
+    items = [_idea(what=long_body, why=long_body) for _ in range(50)]
+
+    text = telegram.format_digest(items)
+
+    # Count rendered items by counting <a href occurrences
+    num_rendered = text.count("<a href")
+
+    # With 50 items of this much content, not all will fit
+    assert num_rendered < 50, f"Expected fewer than 50 items; got {num_rendered}"
+
+    # Message should contain trimmed note, not quiet-morning claim
+    assert "trimmed" in text.lower()
+    assert "everything worth flagging" not in text
