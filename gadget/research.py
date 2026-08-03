@@ -114,6 +114,13 @@ def _extract_json(text: str) -> dict:
         raise ResearchError(f"Response JSON did not parse: {exc}") from exc
 
 
+def _field(idea: dict, key: str) -> str:
+    value = idea.get(key)
+    if value is None or isinstance(value, (list, dict, bool)):
+        return ""
+    return str(value).strip()
+
+
 def _validate(payload: dict) -> list[dict]:
     ideas = payload.get("ideas")
     if not isinstance(ideas, list):
@@ -123,10 +130,11 @@ def _validate(payload: dict) -> list[dict]:
     for index, idea in enumerate(ideas[:MAX_IDEAS]):
         if not isinstance(idea, dict):
             raise ResearchError(f"Idea {index} is not an object")
-        missing = [key for key in REQUIRED_KEYS if not str(idea.get(key, "")).strip()]
+        fields = {key: _field(idea, key) for key in REQUIRED_KEYS}
+        missing = [key for key, value in fields.items() if not value]
         if missing:
             raise ResearchError(f"Idea {index} is missing: {', '.join(missing)}")
-        validated.append({key: str(idea[key]).strip() for key in REQUIRED_KEYS})
+        validated.append(fields)
 
     return validated
 
@@ -155,7 +163,11 @@ def find_ideas(profile: str, seen: list[dict], *, client=None) -> list[dict]:
             # The server-side search loop hit its iteration cap; echo the turn
             # back and the server resumes where it left off.
             messages.append({"role": "assistant", "content": response.content})
+    except ResearchError:
+        raise
     except anthropic.APIError as exc:
         raise ResearchError(f"Claude API error: {exc}") from exc
+    except Exception as exc:  # never let an unexpected type escape — run.py only catches ResearchError
+        raise ResearchError(f"Unexpected failure during research: {exc!r}") from exc
 
     raise ResearchError(f"Search did not converge after {MAX_RESUMES} resumes")

@@ -113,3 +113,69 @@ def test_find_ideas_caps_at_three_items():
     client = _client(_response(payload))
 
     assert len(research.find_ideas("profile", [], client=client)) == 3
+
+
+def test_find_ideas_raises_research_error_on_unexpected_response_shape():
+    # Response has no usable `content` at all -- _text_of would raise
+    # AttributeError if unguarded. find_ideas must still raise ResearchError.
+    weird_response = SimpleNamespace(stop_reason="end_turn")
+    client = _client(weird_response)
+
+    with pytest.raises(research.ResearchError):
+        research.find_ideas("profile", [], client=client)
+
+
+def test_find_ideas_raises_when_source_url_is_null():
+    broken = _idea()
+    broken["source_url"] = None
+    payload = json.dumps({"ideas": [broken]})
+    client = _client(_response(payload))
+
+    with pytest.raises(research.ResearchError, match="source_url"):
+        research.find_ideas("profile", [], client=client)
+
+
+def test_find_ideas_raises_when_hook_is_a_list():
+    broken = _idea()
+    broken["hook"] = []
+    payload = json.dumps({"ideas": [broken]})
+    client = _client(_response(payload))
+
+    with pytest.raises(research.ResearchError, match="hook"):
+        research.find_ideas("profile", [], client=client)
+
+
+def test_find_ideas_raises_after_exhausting_resumes():
+    responses = [_response("searching...", stop_reason="pause_turn") for _ in range(research.MAX_RESUMES)]
+    client = _client(*responses)
+
+    with pytest.raises(research.ResearchError):
+        research.find_ideas("profile", [], client=client)
+
+    assert client.messages.create.call_count == research.MAX_RESUMES
+
+
+def test_find_ideas_preserves_conversation_across_resume():
+    payload = json.dumps({"ideas": [_idea()]})
+    responses = [_response("searching...", stop_reason="pause_turn"), _response(payload)]
+
+    # `messages` is mutated in place and appended to on each resume, so
+    # MagicMock's call_args_list would hold references to the *same* list
+    # object for every call. Snapshot the length/shape at call time instead.
+    seen_message_lists = []
+
+    def _create(**kwargs):
+        messages = kwargs["messages"]
+        seen_message_lists.append((len(messages), messages[-1]["role"]))
+        return responses.pop(0)
+
+    client = MagicMock()
+    client.messages.create.side_effect = _create
+
+    research.find_ideas("profile", [], client=client)
+
+    first_len, _ = seen_message_lists[0]
+    second_len, second_last_role = seen_message_lists[1]
+
+    assert second_len > first_len
+    assert second_last_role == "assistant"
