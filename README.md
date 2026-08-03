@@ -36,7 +36,7 @@ Optionally set an avatar with `/setuserpic`.
 Send any message to your new bot (say `hi`), then run:
 
 ```bash
-curl -s "https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates" | grep -o '"id":[0-9-]*' | head -1
+curl -s "https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates" | grep -o '"chat":{"id":[0-9-]*' | grep -o '[0-9-]*$' | head -1
 ```
 
 The number is your `TELEGRAM_CHAT_ID`.
