@@ -41,15 +41,21 @@ curl -s "https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates" | grep -o '"chat":
 
 The number is your `TELEGRAM_CHAT_ID`.
 
-### 3. Add the repository secrets
+### 3. Add the secrets
 
-In GitHub → Settings → Secrets and variables → Actions → New repository secret:
+These three live in the **`Gadget` environment** (GitHub → Settings →
+Environments → Gadget → Environment secrets):
 
 | Name | Value |
 | --- | --- |
 | `ANTHROPIC_API_KEY` | From console.anthropic.com |
 | `TELEGRAM_BOT_TOKEN` | From @BotFather |
 | `TELEGRAM_CHAT_ID` | From step 2 |
+
+The `digest` job in `daily.yml` declares `environment: Gadget` so it can read
+them. Environment secrets are invisible to any job that does not name the
+environment — if you ever move these to repository-level secrets instead, drop
+that line, and if you rename the environment, change it in both places.
 
 ### 4. Test it
 

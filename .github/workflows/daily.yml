@@ -22,6 +22,9 @@ concurrency:
 jobs:
   digest:
     runs-on: ubuntu-latest
+    # The three secrets live in the "Gadget" environment rather than at repo
+    # level; without this line they resolve to empty and the run exits 1.
+    environment: Gadget
     steps:
       - name: Skip unless it is 08:00 in Israel
         id: guard
