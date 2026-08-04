@@ -86,4 +86,9 @@ python -m gadget.run --dry-run
 
 ## Cost
 
-Roughly $3–8/month, mostly web searches ($10 per 1,000; up to 8 per run).
+Roughly $2–5/month, mostly web searches ($10 per 1,000; up to 5 per run).
+
+The sweep is budgeted to finish inside three minutes — `MAX_SEARCHES`,
+`EFFORT`, and `DEADLINE_SECONDS` in `gadget/research.py` are the knobs.
+The deadline is enforced in Python rather than by a workflow timeout so a
+slow morning still sends you a message explaining itself.

@@ -4,14 +4,22 @@ from __future__ import annotations
 
 import json
 import re
+import time
 
 import anthropic
 
 MODEL = "claude-sonnet-5"
 MAX_TOKENS = 16000
-MAX_SEARCHES = 8
+MAX_SEARCHES = 5
 MAX_IDEAS = 3
 MAX_RESUMES = 5
+EFFORT = "low"
+
+# The whole sweep is budgeted to finish inside three minutes. The deadline is
+# enforced here rather than by a workflow timeout on purpose: killing the job
+# would skip the Telegram notification, and silence is supposed to mean success.
+DEADLINE_SECONDS = 170
+REQUEST_TIMEOUT_SECONDS = 150
 
 REQUIRED_KEYS = (
     "hook",
@@ -149,17 +157,22 @@ def find_ideas(profile: str, seen: list[dict], *, client=None) -> list[dict]:
     Raises ResearchError on any API or parsing failure — run.py turns that into
     a Telegram stumble message.
     """
-    client = client or anthropic.Anthropic()
+    client = client or anthropic.Anthropic(timeout=REQUEST_TIMEOUT_SECONDS)
     messages = [{"role": "user", "content": _build_prompt(profile, seen)}]
+    deadline = time.monotonic() + DEADLINE_SECONDS
 
     try:
         for _ in range(MAX_RESUMES):
+            if time.monotonic() > deadline:
+                raise ResearchError(
+                    f"Research exceeded its {DEADLINE_SECONDS}s budget before finishing"
+                )
             response = client.messages.create(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
                 system=SYSTEM,
                 tools=[WEB_SEARCH_TOOL],
-                output_config={"effort": "medium"},
+                output_config={"effort": EFFORT},
                 messages=messages,
             )
             if response.stop_reason == "max_tokens":

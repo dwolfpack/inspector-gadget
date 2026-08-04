@@ -25,6 +25,10 @@ jobs:
     # The three secrets live in the "Gadget" environment rather than at repo
     # level; without this line they resolve to empty and the run exits 1.
     environment: Gadget
+    # Backstop only. research.py enforces its own ~3 minute deadline and still
+    # sends a Telegram message when it trips; this just stops a wedged job from
+    # burning Actions minutes.
+    timeout-minutes: 10
     steps:
       - name: Skip unless it is 08:00 in Israel
         id: guard

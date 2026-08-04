@@ -58,8 +58,35 @@ def test_find_ideas_uses_the_configured_model_and_web_search():
     kwargs = client.messages.create.call_args.kwargs
     assert kwargs["model"] == "claude-sonnet-5"
     assert kwargs["tools"] == [
-        {"type": "web_search_20260209", "name": "web_search", "max_uses": 8}
+        {
+            "type": "web_search_20260209",
+            "name": "web_search",
+            "max_uses": research.MAX_SEARCHES,
+        }
     ]
+    assert kwargs["output_config"]["effort"] == research.EFFORT
+
+
+def test_the_search_budget_fits_inside_three_minutes():
+    # The whole point of these two numbers is that a morning digest lands
+    # quickly; if someone raises them, this is the reminder to re-time it.
+    assert research.MAX_SEARCHES <= 5
+    assert research.DEADLINE_SECONDS <= 180
+
+
+def test_find_ideas_gives_up_when_the_deadline_passes(monkeypatch):
+    payload = json.dumps({"ideas": [_idea()]})
+    client = _client(_response("searching...", stop_reason="pause_turn"), _response(payload))
+
+    # First check passes, second is past the budget.
+    ticks = iter([0, 0, research.DEADLINE_SECONDS + 1])
+    monkeypatch.setattr(research.time, "monotonic", lambda: next(ticks))
+
+    with pytest.raises(research.ResearchError) as excinfo:
+        research.find_ideas("profile", [], client=client)
+
+    assert "budget" in str(excinfo.value)
+    assert client.messages.create.call_count == 1
 
 
 def test_find_ideas_sends_seen_urls_as_exclusions():
