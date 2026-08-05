@@ -2,12 +2,17 @@ name: daily digest
 
 on:
   schedule:
-    # 05:00 UTC = 08:00 IDT (summer, UTC+3)
-    # 06:00 UTC = 08:00 IST (winter, UTC+2)
-    # The guard step below drops whichever run is not 08:00 in Israel, so the
-    # cron never needs editing when DST flips.
-    - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
+    # Four attempts, not one. GitHub does not guarantee cron punctuality —
+    # delays of 30–120 minutes are routine — so a single slot gated on an exact
+    # hour will silently miss days. Idempotency comes from the marker file
+    # checked below, not from the schedule: the first slot that runs at or
+    # after 08:00 Israel time sends, and the rest become no-ops.
+    #
+    # Local times are IDT (UTC+3, summer) / IST (UTC+2, winter):
+    - cron: "7 5 * * *"    # 08:07 / 07:07
+    - cron: "13 6 * * *"   # 09:13 / 08:13
+    - cron: "19 7 * * *"   # 10:19 / 09:19
+    - cron: "27 8 * * *"   # 11:27 / 10:27
   workflow_dispatch:
 
 permissions:
@@ -30,19 +35,33 @@ jobs:
     # burning Actions minutes.
     timeout-minutes: 10
     steps:
-      - name: Skip unless it is 08:00 in Israel
+      # Checkout comes first because the guard reads the marker file.
+      - uses: actions/checkout@v4
+
+      - name: Decide whether today's digest still needs sending
         id: guard
         run: |
-          hour="$(TZ=Asia/Jerusalem date +%H)"
-          echo "Israel hour is $hour"
-          if [ "$hour" != "08" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+          # 10# forces decimal — "08" would otherwise be read as octal.
+          hour=$((10#$(TZ=Asia/Jerusalem date +%H)))
+          today="$(TZ=Asia/Jerusalem date +%F)"
+          last="$(cat history/.last-sent 2>/dev/null || echo none)"
+          echo "Israel time: $today hour $hour | last sent: $last"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual run — sending regardless."
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "$last" = "$today" ]; then
+            echo "Already sent today. Nothing to do."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$hour" -lt 8 ]; then
+            echo "Too early — a later slot will pick this up."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          elif [ "$hour" -gt 15 ]; then
+            echo "Too late to call this a morning digest. Skipping the day."
             echo "run=false" >> "$GITHUB_OUTPUT"
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - uses: actions/checkout@v4
-        if: steps.guard.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
         if: steps.guard.outputs.run == 'true'
@@ -61,17 +80,26 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python -m gadget.run
 
-      - name: Commit the history entry
+      # Runs only if the send succeeded, so a failed digest does not mark the
+      # day done. The marker and the history entry go in one commit: if the
+      # push fails, both are missing together and a later slot retries the day
+      # rather than half-remembering it.
+      - name: Record that today's digest went out
         if: steps.guard.outputs.run == 'true'
         continue-on-error: true
         run: |
-          if [ -z "$(git status --porcelain history/)" ]; then
-            echo "No history change to commit."
-            exit 0
-          fi
+          TZ=Asia/Jerusalem date +%F > history/.last-sent
           git config user.name "inspector-gadget[bot]"
           git config user.email "inspector-gadget@users.noreply.github.com"
           git add history/
-          git commit -m "chore: record $(TZ=Asia/Jerusalem date +%Y-%m-%d) digest"
-          git pull --rebase --autostash origin main || true
-          git push
+          git commit -m "chore: record $(TZ=Asia/Jerusalem date +%F) digest"
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash origin main || git rebase --abort || true
+            if git push origin main; then
+              echo "Recorded."
+              exit 0
+            fi
+            echo "Push attempt $attempt failed; retrying."
+            sleep 5
+          done
+          echo "Could not record the send. A later slot may resend today."

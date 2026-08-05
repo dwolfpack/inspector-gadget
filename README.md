@@ -80,9 +80,18 @@ python -m gadget.run --dry-run
 - **What it looks for** — the `SYSTEM` prompt in `gadget/research.py`.
 - **Who it's for** — `profile.md`. Keep this current; it is what makes the
   `why_you` line land.
-- **When it runs** — the cron pair in `.github/workflows/daily.yml`. Both entries
-  exist so the Israel-hour guard can pick the right one across DST; change both
-  together.
+- **When it runs** — the four cron slots in `.github/workflows/daily.yml`,
+  spanning roughly 08:00–11:30 Israel time across both DST states.
+
+  There are four rather than one because GitHub does not guarantee cron
+  punctuality; delays of 30–120 minutes are routine. Idempotency comes from
+  `history/.last-sent`, which records the Israel date of the last successful
+  send: the first slot that runs at or after 08:00 local sends the digest, and
+  every later slot that day sees the marker and becomes a no-op. A delayed run
+  therefore arrives late instead of not at all.
+
+  If you ever need to force a resend on a day that already went out, delete
+  `history/.last-sent` — or just use Run workflow, which bypasses the check.
 
 ## Cost
 
