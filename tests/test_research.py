@@ -237,3 +237,37 @@ def test_find_ideas_preserves_conversation_across_resume():
 
     assert second_len > first_len
     assert second_last_role == "assistant"
+
+
+def test_find_ideas_logs_the_dedupe_counts(capsys):
+    payload = json.dumps({"ideas": [_idea("A"), _idea("B")]})
+    # Both share the same _idea() source_url, and it is already in `seen`,
+    # so both should be reported as duplicates and nothing returned.
+    client = _client(_response(payload))
+    seen = [{"hook": "old", "source_url": "https://example.com"}]
+
+    kept = research.find_ideas("profile", seen, client=client)
+
+    err = capsys.readouterr().err
+    assert kept == []
+    assert "model returned 2 idea(s)" in err
+    assert "2 already sent" in err
+    assert "0 new" in err
+    assert "[dup] https://example.com" in err
+
+
+def test_find_ideas_logs_new_ideas_as_new(capsys):
+    payload = json.dumps({"ideas": [_idea("A")]})
+    client = _client(_response(payload))
+
+    research.find_ideas("profile", [], client=client)
+
+    err = capsys.readouterr().err
+    assert "1 new" in err
+    assert "[new] https://example.com" in err
+
+
+def test_effort_is_medium():
+    # Dropped to "low" for a 3-minute budget, which produced two consecutive
+    # empty digests. Pin the setting so a change is deliberate.
+    assert research.EFFORT == "medium"

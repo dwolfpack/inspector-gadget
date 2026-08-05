@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import time
 
 import anthropic
@@ -13,7 +14,7 @@ MAX_TOKENS = 16000
 MAX_SEARCHES = 5
 MAX_IDEAS = 3
 MAX_RESUMES = 5
-EFFORT = "low"
+EFFORT = "medium"
 
 # The whole sweep is budgeted to finish inside three minutes. The deadline is
 # enforced here rather than by a workflow timeout on purpose: killing the job
@@ -184,11 +185,26 @@ def find_ideas(profile: str, seen: list[dict], *, client=None) -> list[dict]:
                 seen_urls = {
                     str(item.get("source_url", "")).rstrip("/").lower() for item in seen
                 }
-                return [
+                kept = [
                     idea
                     for idea in validated
                     if idea["source_url"].rstrip("/").lower() not in seen_urls
                 ]
+                # A "quiet morning" is ambiguous without this: it could mean the
+                # model found nothing, or that it found things we had already
+                # sent. These two numbers tell the difference from the Actions
+                # log alone.
+                dropped = len(validated) - len(kept)
+                print(
+                    f"research: model returned {len(validated)} idea(s); "
+                    f"{dropped} already sent; {len(kept)} new "
+                    f"(exclusion list: {len(seen_urls)} URLs)",
+                    file=sys.stderr,
+                )
+                for idea in validated:
+                    mark = "new" if idea in kept else "dup"
+                    print(f"  [{mark}] {idea['source_url']}", file=sys.stderr)
+                return kept
             # The server-side search loop hit its iteration cap; echo the turn
             # back and the server resumes where it left off.
             messages.append({"role": "assistant", "content": response.content})
