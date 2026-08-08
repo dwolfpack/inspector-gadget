@@ -222,6 +222,17 @@ def render_board(day: str, items: list[dict], *, searches: int, home: bool = Tru
     return _page(title=f"{TITLE} — {day}", body=header + "\n" + _render_sections(items), home=home)
 
 
+def render_waiting() -> str:
+    """Shown before the first board exists, so the site never fakes a quiet day."""
+    body = f"""<header>
+  <p class="meta">Not published yet</p>
+  <h1>{_esc(TITLE)}</h1>
+  <p class="tagline">{_esc(TAGLINE)}</p>
+</header>
+    <p class="quiet">The first board goes up on the next run.</p>"""
+    return _page(title=TITLE, body=body, home=True)
+
+
 def render_archive(days: "OrderedDict[str, list[dict]]") -> str:
     rows = "\n".join(
         f'      <li><a href="{_esc(day)}.html">{_esc(_pretty_date(day))}</a>'
@@ -251,12 +262,17 @@ def build(entries: list[dict], *, searches: int, root: Path | None = None) -> li
     days = group_by_day(entries)
     written: list[Path] = []
 
-    today = next(iter(days), None)
     index = docs / "index.html"
-    index.write_text(
-        render_board(today or "", days.get(today, []) if today else [], searches=searches),
-        encoding="utf-8",
-    )
+    today = next(iter(days), None)
+    if today is None:
+        # No board has ever been published. Saying "nothing cleared the bar
+        # today" here would be a lie about the news rather than a statement
+        # about this site.
+        index.write_text(render_waiting(), encoding="utf-8")
+    else:
+        index.write_text(
+            render_board(today, days[today], searches=searches), encoding="utf-8"
+        )
     written.append(index)
 
     for day, items in days.items():

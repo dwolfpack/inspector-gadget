@@ -93,9 +93,23 @@ def test_build_index_shows_only_the_newest_day(tmp_path):
     assert "Yesterday" not in index
 
 
-def test_build_on_an_empty_archive_still_writes_a_page(tmp_path):
+def test_build_on_an_empty_archive_says_it_is_not_published_yet(tmp_path):
+    # Claiming "nothing cleared the bar today" before any board has ever been
+    # published would be a statement about the news, not about this site.
     site.build([], searches=5, root=tmp_path)
 
     index = (tmp_path / "index.html").read_text(encoding="utf-8")
-    assert "Nothing cleared the bar" in index
+    assert "first board goes up" in index
+    assert "Nothing cleared the bar" not in index
     assert "0 days on record" in (tmp_path / "archive" / "index.html").read_text(encoding="utf-8")
+
+
+def test_a_real_day_with_no_items_still_says_the_bar_was_not_cleared(tmp_path):
+    # Distinct from the never-published case: this day genuinely happened.
+    empty_day = {"sent_at": "2026-08-07T06:00:00+00:00", "headline": "x",
+                 "summary": "", "why_it_matters": "", "outlet": "",
+                 "source_url": "", "section": "Models & Releases"}
+    html = site.render_board("2026-08-07", [], searches=5)
+
+    assert "Nothing cleared the bar" in html
+    assert "first board goes up" not in html
