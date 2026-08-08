@@ -78,7 +78,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -m gadget.run
+        run: |
+          python -u -m gadget.run; code=$?
+          echo "gadget.run exited $code"
+          exit $code
 
       # Runs only if the send succeeded, so a failed digest does not mark the
       # day done. The marker and the history entry go in one commit: if the
