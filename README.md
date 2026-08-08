@@ -1,19 +1,25 @@
 # Inspector Gadget
 
-A daily scout. Every morning at 08:00 Israel time it sweeps the web for new
-things worth doing with Claude and sends three of them to Telegram.
+A small agent that runs one web sweep a day and writes up what actually moved in
+AI — general news plus prompt-engineering and technique — with every item cited
+to the source it was read in.
 
-Design doc: `claude_projects/docs/superpowers/specs/2026-08-03-inspector-gadget-design.md`
+**The board: https://dwolfpack.github.io/inspector-gadget/**
+
+A short teaser lands on Telegram each morning; the site is the artifact.
 
 ## How it works
 
 A GitHub Actions cron job runs `python -m gadget.run`, which:
 
-1. Loads `profile.md` and the last 30 days of `history/*.jsonl`.
-2. Asks `claude-sonnet-5` — with the web search tool enabled — for three new
-   ideas, excluding anything already sent.
-3. Renders them as Telegram HTML and sends them.
-4. Appends what it sent to `history/` and commits it back to this repo.
+1. Loads the last 30 days of `history/*.jsonl` as an exclusion list.
+2. Asks `claude-sonnet-5` — with the web search tool enabled — for today's
+   items, skipping any story whose source URL has already been covered.
+3. Appends them to `history/`.
+4. Regenerates the static site under `docs/` from the whole archive.
+5. Sends a headline teaser to Telegram linking to the board.
+6. Commits `history/` and `docs/` back to this repo, which is what publishes
+   the site via GitHub Pages (`main` branch, `/docs` folder).
 
 If anything fails, it sends a "stumbled" message instead. Silence means it
 worked.
@@ -77,9 +83,11 @@ python -m gadget.run --dry-run
 
 ## Tuning it
 
-- **What it looks for** — the `SYSTEM` prompt in `gadget/research.py`.
-- **Who it's for** — `profile.md`. Keep this current; it is what makes the
-  `why_you` line land.
+- **What it looks for** — the `SYSTEM` prompt in `gadget/research.py`. The four
+  board sections are the `SECTIONS` tuple in the same file.
+- **How it looks** — `STYLE` and the render functions in `gadget/site.py`. No
+  build tooling, no framework, no JavaScript; the whole site is generated from
+  the archive on every run.
 - **When it runs** — the four cron slots in `.github/workflows/daily.yml`,
   spanning roughly 08:00–11:30 Israel time across both DST states.
 

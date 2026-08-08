@@ -8,6 +8,7 @@ import time
 import requests
 
 MAX_LEN = 4096
+SITE_URL = "https://dwolfpack.github.io/inspector-gadget/"
 SEPARATOR = "\n\n————————\n\n"
 HEADER = "<b>🕵️ Inspector Gadget</b>\n\n"
 QUIET_NOTE = "\n\n<i>Quiet morning — that's everything worth flagging.</i>"
@@ -135,3 +136,40 @@ def send(text: str, *, token: str, chat_id: str) -> None:
         f"Telegram sendMessage failed after 2 attempts "
         f"(status={last_status}): {safe_body}"
     )
+
+
+def format_board(day: str, items: list[dict]) -> str:
+    """A short teaser: today's headlines plus a link to the full board.
+
+    Deliberately not the whole board — the site is the artifact and this is the
+    nudge to go read it. Over-long input sheds whole items from the end rather
+    than slicing rendered HTML, which would risk splitting a tag or an entity.
+    """
+    head = HEADER + f"<b>{_esc(day)}</b>\n\n"
+    tail_for = lambda n: (
+        f'\n\n<a href="{SITE_URL}">Read all {n} item{"s" if n != 1 else ""} &rsaquo;</a>'
+    )
+
+    if not items:
+        return (
+            head
+            + "<i>Nothing cleared the bar today.</i>\n\n"
+            + f'<a href="{SITE_URL}">The board</a>'
+        )
+
+    lines = [
+        "• <b>"
+        + _esc(_clip(str(item.get("headline", "")), 150))
+        + "</b>\n   <i>"
+        + _esc(_clip(str(item.get("outlet", "")), 40))
+        + "</i>"
+        for item in items
+    ]
+
+    shown = len(lines)
+    while shown > 0:
+        text = head + "\n\n".join(lines[:shown]) + tail_for(len(items))
+        if len(text) <= MAX_LEN:
+            return text
+        shown -= 1
+    return head + tail_for(len(items))

@@ -84,14 +84,14 @@ jobs:
       # day done. The marker and the history entry go in one commit: if the
       # push fails, both are missing together and a later slot retries the day
       # rather than half-remembering it.
-      - name: Record that today's digest went out
+      - name: Publish the board and record the send
         if: steps.guard.outputs.run == 'true'
         continue-on-error: true
         run: |
           TZ=Asia/Jerusalem date +%F > history/.last-sent
           git config user.name "inspector-gadget[bot]"
           git config user.email "inspector-gadget@users.noreply.github.com"
-          git add history/
+          git add history/ docs/
           git commit -m "chore: record $(TZ=Asia/Jerusalem date +%F) digest"
           for attempt in 1 2 3; do
             git pull --rebase --autostash origin main || git rebase --abort || true

@@ -179,3 +179,35 @@ def test_format_shows_trimmed_note_when_items_dropped_for_size():
     # Message should contain trimmed note, not quiet-morning claim
     assert "trimmed" in text.lower()
     assert "everything worth flagging" not in text
+
+
+def test_format_board_renders_headlines_and_a_link():
+    items = [
+        {"headline": "A thing happened", "outlet": "Reuters"},
+        {"headline": "R&D <spending> up", "outlet": "The Information"},
+    ]
+    text = telegram.format_board("2026-08-07", items)
+
+    assert "A thing happened" in text
+    assert "R&amp;D &lt;spending&gt; up" in text
+    assert "<spending>" not in text
+    assert telegram.SITE_URL in text
+    assert "Read all 2 items" in text
+    assert len(text) <= telegram.MAX_LEN
+
+
+def test_format_board_with_no_items_says_so_and_still_links():
+    text = telegram.format_board("2026-08-07", [])
+
+    assert "nothing cleared the bar" in text.lower()
+    assert telegram.SITE_URL in text
+
+
+def test_format_board_sheds_items_rather_than_slicing_html():
+    items = [{"headline": "x" * 300, "outlet": "y" * 80}] * 60
+    text = telegram.format_board("2026-08-07", items)
+
+    assert len(text) <= telegram.MAX_LEN
+    assert text.count("<") == text.count(">")
+    # The count still reflects what the board actually holds, not what fit.
+    assert "Read all 60 items" in text

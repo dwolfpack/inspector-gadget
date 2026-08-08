@@ -5,12 +5,14 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-from gadget import history, research, telegram
+from gadget import history, research, site, telegram
 
-PROFILE_PATH = Path(__file__).resolve().parent.parent / "profile.md"
 HISTORY_WINDOW_DAYS = 30
+# The site keeps everything; the exclusion list only looks back a month.
+SITE_WINDOW_DAYS = 3650
 
 
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
@@ -64,25 +66,37 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Telegram delivery failed: {exc}", file=sys.stderr)
             return False
 
-    profile = PROFILE_PATH.read_text(encoding="utf-8")
     seen = history.load_recent(days=HISTORY_WINDOW_DAYS)
 
     try:
-        ideas = research.find_ideas(profile, seen)
+        items = research.find_items(seen)
     except research.ResearchError as exc:
         notify(f"🕵️ <b>Inspector Gadget stumbled</b>\n\n{telegram.escape_html(str(exc))}")
         return 1
 
-    if not notify(telegram.format_digest(ideas)):
-        return 1
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    if ideas and not args.dry_run:
+    if items and not args.dry_run:
         try:
-            history.append(ideas)
+            history.append(items)
         except OSError as exc:
-            # The digest already went out. A lost history entry costs at most
-            # one repeated idea, so this is not worth failing the run over.
+            # Recorded before the site is built so the board includes today.
+            # A lost entry costs at most one repeated story tomorrow.
             print(f"Could not write history: {exc}", file=sys.stderr)
+
+    if not args.dry_run:
+        try:
+            written = site.build(
+                history.load_recent(days=SITE_WINDOW_DAYS),
+                searches=research.MAX_SEARCHES,
+            )
+            print(f"site: wrote {len(written)} page(s)", file=sys.stderr)
+        except OSError as exc:
+            # The board still goes out on Telegram; only the site is stale.
+            print(f"Could not build the site: {exc}", file=sys.stderr)
+
+    if not notify(telegram.format_board(today, items)):
+        return 1
 
     return 0
 

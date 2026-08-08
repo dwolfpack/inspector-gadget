@@ -7,14 +7,14 @@ import pytest
 from gadget import research
 
 
-def _idea(hook="Hook"):
+def _idea(headline="Headline"):
     return {
-        "hook": hook,
-        "what_it_is": "what",
-        "why_you": "why",
+        "headline": headline,
+        "summary": "What happened, in two sentences.",
+        "why_it_matters": "Why a reader should care.",
+        "outlet": "Reuters",
         "source_url": "https://example.com",
-        "prompt_to_try": "prompt",
-        "category": "releases",
+        "section": "Models & Releases",
     }
 
 
@@ -32,28 +32,28 @@ def _client(*responses):
 
 
 def test_find_ideas_parses_a_fenced_json_block():
-    payload = json.dumps({"ideas": [_idea("A"), _idea("B"), _idea("C")]})
+    payload = json.dumps({"items": [_idea("A"), _idea("B"), _idea("C")]})
     client = _client(_response(f"Here you go:\n```json\n{payload}\n```"))
 
-    ideas = research.find_ideas("profile", [], client=client)
+    ideas = research.find_items([], client=client)
 
-    assert [item["hook"] for item in ideas] == ["A", "B", "C"]
+    assert [item["headline"] for item in ideas] == ["A", "B", "C"]
 
 
 def test_find_ideas_parses_bare_json():
-    payload = json.dumps({"ideas": [_idea("A")]})
+    payload = json.dumps({"items": [_idea("A")]})
     client = _client(_response(payload))
 
-    ideas = research.find_ideas("profile", [], client=client)
+    ideas = research.find_items([], client=client)
 
     assert len(ideas) == 1
 
 
 def test_find_ideas_uses_the_configured_model_and_web_search():
-    payload = json.dumps({"ideas": [_idea()]})
+    payload = json.dumps({"items": [_idea()]})
     client = _client(_response(payload))
 
-    research.find_ideas("profile", [], client=client)
+    research.find_items([], client=client)
 
     kwargs = client.messages.create.call_args.kwargs
     assert kwargs["model"] == "claude-sonnet-5"
@@ -75,7 +75,7 @@ def test_the_search_budget_fits_inside_three_minutes():
 
 
 def test_find_ideas_gives_up_when_the_deadline_passes(monkeypatch):
-    payload = json.dumps({"ideas": [_idea()]})
+    payload = json.dumps({"items": [_idea()]})
     client = _client(_response("searching...", stop_reason="pause_turn"), _response(payload))
 
     # First check passes, second is past the budget.
@@ -83,18 +83,18 @@ def test_find_ideas_gives_up_when_the_deadline_passes(monkeypatch):
     monkeypatch.setattr(research.time, "monotonic", lambda: next(ticks))
 
     with pytest.raises(research.ResearchError) as excinfo:
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
     assert "budget" in str(excinfo.value)
     assert client.messages.create.call_count == 1
 
 
 def test_find_ideas_sends_seen_urls_as_exclusions():
-    payload = json.dumps({"ideas": [_idea()]})
+    payload = json.dumps({"items": [_idea()]})
     client = _client(_response(payload))
-    seen = [{"hook": "Old thing", "source_url": "https://old.example"}]
+    seen = [{"headline": "Old thing", "source_url": "https://old.example"}]
 
-    research.find_ideas("profile", seen, client=client)
+    research.find_items(seen, client=client)
 
     prompt = client.messages.create.call_args.kwargs["messages"][0]["content"]
     assert "https://old.example" in prompt
@@ -102,10 +102,10 @@ def test_find_ideas_sends_seen_urls_as_exclusions():
 
 
 def test_find_ideas_resumes_on_pause_turn():
-    payload = json.dumps({"ideas": [_idea()]})
+    payload = json.dumps({"items": [_idea()]})
     client = _client(_response("searching...", stop_reason="pause_turn"), _response(payload))
 
-    ideas = research.find_ideas("profile", [], client=client)
+    ideas = research.find_items([], client=client)
 
     assert len(ideas) == 1
     assert client.messages.create.call_count == 2
@@ -115,31 +115,31 @@ def test_find_ideas_raises_on_unparseable_response():
     client = _client(_response("I could not find anything useful today."))
 
     with pytest.raises(research.ResearchError):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_raises_when_an_idea_is_missing_a_key():
     broken = _idea()
-    del broken["prompt_to_try"]
-    payload = json.dumps({"ideas": [broken]})
+    del broken["summary"]
+    payload = json.dumps({"items": [broken]})
     client = _client(_response(payload))
 
     with pytest.raises(research.ResearchError):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_returns_empty_list_when_model_finds_nothing():
-    payload = json.dumps({"ideas": []})
+    payload = json.dumps({"items": []})
     client = _client(_response(payload))
 
-    assert research.find_ideas("profile", [], client=client) == []
+    assert research.find_items([], client=client) == []
 
 
-def test_find_ideas_caps_at_three_items():
-    payload = json.dumps({"ideas": [_idea(str(i)) for i in range(6)]})
+def test_find_items_caps_at_max_items():
+    payload = json.dumps({"items": [_idea(str(i)) for i in range(9)]})
     client = _client(_response(payload))
 
-    assert len(research.find_ideas("profile", [], client=client)) == 3
+    assert len(research.find_items([], client=client)) == research.MAX_ITEMS
 
 
 def test_find_ideas_raises_research_error_on_unexpected_response_shape():
@@ -149,27 +149,27 @@ def test_find_ideas_raises_research_error_on_unexpected_response_shape():
     client = _client(weird_response)
 
     with pytest.raises(research.ResearchError):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_raises_when_source_url_is_null():
     broken = _idea()
     broken["source_url"] = None
-    payload = json.dumps({"ideas": [broken]})
+    payload = json.dumps({"items": [broken]})
     client = _client(_response(payload))
 
     with pytest.raises(research.ResearchError, match="source_url"):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_raises_when_hook_is_a_list():
     broken = _idea()
-    broken["hook"] = []
-    payload = json.dumps({"ideas": [broken]})
+    broken["headline"] = []
+    payload = json.dumps({"items": [broken]})
     client = _client(_response(payload))
 
-    with pytest.raises(research.ResearchError, match="hook"):
-        research.find_ideas("profile", [], client=client)
+    with pytest.raises(research.ResearchError, match="headline"):
+        research.find_items([], client=client)
 
 
 def test_find_ideas_raises_after_exhausting_resumes():
@@ -177,7 +177,7 @@ def test_find_ideas_raises_after_exhausting_resumes():
     client = _client(*responses)
 
     with pytest.raises(research.ResearchError):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
     assert client.messages.create.call_count == research.MAX_RESUMES
 
@@ -186,35 +186,35 @@ def test_find_ideas_raises_a_clear_error_on_max_tokens_stop():
     client = _client(_response("partial output, no closing fence", stop_reason="max_tokens"))
 
     with pytest.raises(research.ResearchError, match="token limit"):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_drops_ideas_that_duplicate_a_seen_source_url():
-    seen = [{"hook": "Old thing", "source_url": "https://example.com/a"}]
+    seen = [{"headline": "Old thing", "source_url": "https://example.com/a"}]
     dup = _idea("Duplicate")
     dup["source_url"] = "https://EXAMPLE.COM/A/"
     fresh = _idea("Fresh")
     fresh["source_url"] = "https://example.com/b"
-    payload = json.dumps({"ideas": [dup, fresh]})
+    payload = json.dumps({"items": [dup, fresh]})
     client = _client(_response(payload))
 
-    ideas = research.find_ideas("profile", seen, client=client)
+    ideas = research.find_items(seen, client=client)
 
-    assert [item["hook"] for item in ideas] == ["Fresh"]
+    assert [item["headline"] for item in ideas] == ["Fresh"]
 
 
 def test_find_ideas_raises_when_source_url_is_not_http():
     broken = _idea()
     broken["source_url"] = "javascript:alert(1)"
-    payload = json.dumps({"ideas": [broken]})
+    payload = json.dumps({"items": [broken]})
     client = _client(_response(payload))
 
     with pytest.raises(research.ResearchError, match="source_url"):
-        research.find_ideas("profile", [], client=client)
+        research.find_items([], client=client)
 
 
 def test_find_ideas_preserves_conversation_across_resume():
-    payload = json.dumps({"ideas": [_idea()]})
+    payload = json.dumps({"items": [_idea()]})
     responses = [_response("searching...", stop_reason="pause_turn"), _response(payload)]
 
     # `messages` is mutated in place and appended to on each resume, so
@@ -230,7 +230,7 @@ def test_find_ideas_preserves_conversation_across_resume():
     client = MagicMock()
     client.messages.create.side_effect = _create
 
-    research.find_ideas("profile", [], client=client)
+    research.find_items([], client=client)
 
     first_len, _ = seen_message_lists[0]
     second_len, second_last_role = seen_message_lists[1]
@@ -240,27 +240,27 @@ def test_find_ideas_preserves_conversation_across_resume():
 
 
 def test_find_ideas_logs_the_dedupe_counts(capsys):
-    payload = json.dumps({"ideas": [_idea("A"), _idea("B")]})
+    payload = json.dumps({"items": [_idea("A"), _idea("B")]})
     # Both share the same _idea() source_url, and it is already in `seen`,
     # so both should be reported as duplicates and nothing returned.
     client = _client(_response(payload))
     seen = [{"hook": "old", "source_url": "https://example.com"}]
 
-    kept = research.find_ideas("profile", seen, client=client)
+    kept = research.find_items(seen, client=client)
 
     err = capsys.readouterr().err
     assert kept == []
-    assert "model returned 2 idea(s)" in err
+    assert "model returned 2 item(s)" in err
     assert "2 already sent" in err
     assert "0 new" in err
     assert "[dup] https://example.com" in err
 
 
 def test_find_ideas_logs_new_ideas_as_new(capsys):
-    payload = json.dumps({"ideas": [_idea("A")]})
+    payload = json.dumps({"items": [_idea("A")]})
     client = _client(_response(payload))
 
-    research.find_ideas("profile", [], client=client)
+    research.find_items([], client=client)
 
     err = capsys.readouterr().err
     assert "1 new" in err

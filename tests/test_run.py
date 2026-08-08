@@ -5,14 +5,14 @@ import pytest
 from gadget import research, run, telegram
 
 
-def _idea(hook="Hook"):
+def _idea(hook="Headline"):
     return {
-        "hook": hook,
-        "what_it_is": "what",
-        "why_you": "why",
+        "headline": hook,
+        "summary": "What happened.",
+        "why_it_matters": "Why it matters.",
+        "outlet": "Reuters",
         "source_url": "https://example.com",
-        "prompt_to_try": "prompt",
-        "category": "releases",
+        "section": "Models & Releases",
     }
 
 
@@ -25,7 +25,7 @@ def _env(monkeypatch):
 
 def test_happy_path_sends_and_records():
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[_idea()]), \
+         patch("gadget.run.research.find_items", return_value=[_idea()]), \
          patch("gadget.run.telegram.send") as send, \
          patch("gadget.run.history.append") as append:
         code = run.main([])
@@ -37,7 +37,7 @@ def test_happy_path_sends_and_records():
 
 def test_dry_run_neither_sends_nor_records(capsys):
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[_idea("Dry")]), \
+         patch("gadget.run.research.find_items", return_value=[_idea("Dry")]), \
          patch("gadget.run.telegram.send") as send, \
          patch("gadget.run.history.append") as append:
         code = run.main(["--dry-run"])
@@ -50,7 +50,7 @@ def test_dry_run_neither_sends_nor_records(capsys):
 
 def test_research_failure_sends_a_stumble_message_and_exits_nonzero():
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", side_effect=research.ResearchError("boom")), \
+         patch("gadget.run.research.find_items", side_effect=research.ResearchError("boom")), \
          patch("gadget.run.telegram.send") as send, \
          patch("gadget.run.history.append") as append:
         code = run.main([])
@@ -64,7 +64,7 @@ def test_research_failure_sends_a_stumble_message_and_exits_nonzero():
 def test_research_failure_message_escapes_html_in_the_exception():
     with patch("gadget.run.history.load_recent", return_value=[]), \
          patch(
-             "gadget.run.research.find_ideas",
+             "gadget.run.research.find_items",
              side_effect=research.ResearchError("boom <script>alert(1)</script>"),
          ), \
          patch("gadget.run.telegram.send") as send, \
@@ -78,32 +78,36 @@ def test_research_failure_message_escapes_html_in_the_exception():
     append.assert_not_called()
 
 
-def test_no_ideas_sends_quiet_note_and_exits_zero():
+def test_no_items_sends_an_empty_board_note_and_exits_zero():
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[]), \
+         patch("gadget.run.research.find_items", return_value=[]), \
          patch("gadget.run.telegram.send") as send, \
          patch("gadget.run.history.append") as append:
         code = run.main([])
 
     assert code == 0
-    assert "quiet" in send.call_args.args[0].lower()
+    assert "nothing cleared the bar" in send.call_args.args[0].lower()
     append.assert_not_called()
 
 
-def test_telegram_failure_exits_nonzero():
+def test_telegram_failure_exits_nonzero_but_the_item_is_still_recorded():
+    # The site, not Telegram, is now the artifact. Items are recorded and the
+    # board is built BEFORE the teaser is sent, so a Telegram outage costs the
+    # notification but not the day's board.
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[_idea()]), \
+         patch("gadget.run.research.find_items", return_value=[_idea()]), \
          patch("gadget.run.telegram.send", side_effect=telegram.TelegramError("down")), \
+         patch("gadget.run.site.build"), \
          patch("gadget.run.history.append") as append:
         code = run.main([])
 
     assert code == 1
-    append.assert_not_called()
+    append.assert_called_once()
 
 
 def test_history_append_failure_still_exits_zero():
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[_idea()]), \
+         patch("gadget.run.research.find_items", return_value=[_idea()]), \
          patch("gadget.run.telegram.send"), \
          patch("gadget.run.history.append", side_effect=OSError("read-only fs")):
         code = run.main([])
@@ -113,7 +117,7 @@ def test_history_append_failure_still_exits_zero():
 
 def test_missing_env_var_exits_nonzero_without_calling_the_api(monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
-    with patch("gadget.run.research.find_ideas") as find:
+    with patch("gadget.run.research.find_items") as find:
         code = run.main([])
 
     assert code == 1
@@ -124,7 +128,7 @@ def test_dry_run_does_not_require_the_telegram_credentials(monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN")
     monkeypatch.delenv("TELEGRAM_CHAT_ID")
     with patch("gadget.run.history.load_recent", return_value=[]), \
-         patch("gadget.run.research.find_ideas", return_value=[_idea()]), \
+         patch("gadget.run.research.find_items", return_value=[_idea()]), \
          patch("gadget.run.telegram.send") as send:
         code = run.main(["--dry-run"])
 
