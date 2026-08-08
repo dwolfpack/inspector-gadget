@@ -71,6 +71,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         items = research.find_items(seen)
     except research.ResearchError as exc:
+        # Also to stderr. Otherwise the only record of why a run failed is a
+        # Telegram message, and the Actions log shows a bare exit code with no
+        # explanation at all.
+        print(f"research failed: {exc}", file=sys.stderr)
         notify(f"🕵️ <b>Inspector Gadget stumbled</b>\n\n{telegram.escape_html(str(exc))}")
         return 1
 
